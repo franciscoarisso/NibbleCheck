@@ -1,106 +1,82 @@
 # NibbleCheck 🐶🍽️
 
-**NibbleCheck** helps you decide whether a food in a photo is **SAFE**, **CAUTION**, or **UNSAFE** for dogs — and *why*.  
-It combines computer vision to recognize foods with a curated knowledge base (rules, synonyms, canonical items) so decisions are accurate and explainable.
+NibbleCheck is a mobile app and FastAPI backend that helps users check whether foods are safe for dogs using photos, barcodes, or ingredient text. It combines image-based detection, text resolution, and a curated PostgreSQL knowledge base to return clear verdicts: **SAFE**, **CAUTION**, or **UNSAFE**.
 
 ---
 
-## What NibbleCheck Does
+## Overview
 
-- **Photo → Verdict**  
-  Upload a photo of food(s). The app detects items, normalizes names (e.g., “grapes”, “grape jelly”, “dark choclate” typo), and returns a per-item verdict.
+Dog owners often find mixed or unclear information online when trying to check if a food is safe for their pets. NibbleCheck was built to make that process faster, clearer, and more reliable.
 
-- **Explains the Why**  
-  Every result includes a rule-backed rationale, e.g.,  
-  **UNSAFE** — contains xylitol,  
-  **CAUTION** — apple **seeds** are unsafe; flesh is okay,  
-  **SAFE** — plain cooked chicken without bones/skin.
+The app lets users:
+- scan or upload a food photo
+- search by text
+- resolve ingredient lists
+- receive a dog-safety verdict with a short explanation
 
-- **Handles Real-World Variants**  
-  Synonyms, plurals, brands, misspellings, and prep details (raw/cooked, pits/seeds/bones, oil/seasoning).
-
-- **Learns Over Time**  
-  User feedback and edge cases are logged for quality improvements.
+Rather than only classifying food images, NibbleCheck also uses a structured knowledge base of foods, synonyms, and rules so results are more explainable and practical.
 
 ---
 
-## How It Works (End-to-End)
+## Features
 
-1. **Vision**  
-   A lightweight image model detects candidate foods from the photo (single or multi-item). Detections include labels and confidences.
+- **Photo to verdict**  
+  Detects food items from an image and returns a safety status for dogs.
 
-2. **Normalization**  
-   Detected text is mapped to canonical foods via:
-   - exact lookup on **synonyms**
-   - exact lookup on **canonical name**
-   - fuzzy match (Postgres **pg_trgm**) on canonical names
+- **Text and ingredient resolution**  
+  Resolves plain food names or ingredient lists into structured verdicts.
 
-3. **Rule Reasoning**  
-   Structured rules (JSON) adjust or explain the default status for each food and preparation context.  
-   Examples: `{ "part":"seeds" }`, `{ "prepared":"raw" }`, `{ "contains":"xylitol" }`.
+- **Explainable results**  
+  Each result includes a short reason, not just a label.
 
-4. **Verdict & Explanation**  
-   For each item, return a final status (**SAFE / CAUTION / UNSAFE**) plus a short rationale and the matched knowledge sources.
+- **Synonym and fuzzy matching**  
+  Handles food variants, misspellings, plural forms, and alternate names.
 
-5. **Feedback Loop**  
-   Results and optional user feedback are stored (no PII) to improve synonyms, rules, and model performance.
+- **Rule-based reasoning**  
+  Supports context like preparation, parts, and ingredients such as seeds, bones, or xylitol.
 
----
-
-## Major Components
-
-- **Mobile/Web App**  
-  Simple, fast UI to take/upload a photo, review detections, and see verdicts + explanations.
-
-- **API Layer**  
-  Minimal FastAPI service exposing:
-  - `POST /classify` — image in, structured verdicts out  
-  - `GET /resolve?label=...` — resolve a text label to a verdict + explanation  
-  Handles synonym/canonical/fuzzy matching, rule evaluation, and logging.
-
-- **Knowledge Base (PostgreSQL)**  
-  - `foods` — canonical entries with default status  
-  - `synonyms` — robust mapping for variants/plurals/misspellings  
-  - `rules` — JSON conditions for parts/prep/ingredients  
-  - `inferences` — optional logging of detections/results/feedback  
-  Trigram indexes (`pg_trgm`) provide fast fuzzy matching.
+- **Mobile-first experience**  
+  Built with Expo React Native for a simple and practical interface.
 
 ---
 
-## Tech Stack
+## Example Use Cases
 
-- **Computer Vision:** lightweight classifier/detector (exportable for server or on-device)  
-- **Backend:** FastAPI (Python), `psycopg` + pooling  
-- **Database:** PostgreSQL (16–18), `pg_trgm`, enum types for statuses  
-- **App:** React/React Native (or Flutter) for a mobile-first UI  
-- **DevOps:** GitHub Actions CI, Docker (API/DB), environment-based config  
-- **Security/Privacy:** minimal data retention, no PII required, opt-in analytics
+- A user uploads a photo of grapes and gets **UNSAFE**
+- A user scans a snack label containing xylitol and gets **UNSAFE**
+- A user searches “apple slices” and gets **SAFE**, with caution noted for seeds
+- A user pastes an ingredient list and receives an overall verdict based on matched ingredients
 
-### Endpoints
+---
 
-- `GET /health` → `{ "ok": true }`
-- `GET /search?q=grape&limit=10` → fuzzy search over foods + synonyms
-- `GET /foods/{id}` → detail (notes, sources, synonyms, rules)
-- `POST /classify/resolve`
-  - **req**: `{"labels":[{"name":"grape","score":0.81},{"name":"raisin","score":0.42}]}`
-  - **res**:
-    ```json
-    {
-      "overall_status": "UNSAFE",
-      "candidates": [
-        {"food_id":1,"name":"grape","status":"UNSAFE","matched_from":"food","db_score":0.93,"model_label":"grape","model_score":0.81}
-      ]
-    }
-    ```
-- `POST /ingredients/resolve`
-  - **req**: `{"ingredients_text":"wheat flour, raisins, cinnamon, sugar"}`
-  - **res**:
-    ```json
-    {
-      "hits": [
-        {"token":"raisins","food_id":12,"name":"raisin","status":"UNSAFE","matched_from":"synonym","db_score":0.89},
-        {"token":"cinnamon","food_id":77,"name":"cinnamon","status":"CAUTION","matched_from":"food","db_score":0.72}
-      ],
-      "overall_status":"UNSAFE"
-    }
-    ```
+## How It Works
+
+1. **Input**  
+   The user submits a photo, barcode, food name, or ingredient text.
+
+2. **Detection / Resolution**  
+   Candidate foods are identified from image labels, search terms, or parsed ingredient tokens.
+
+3. **Normalization**  
+   Inputs are mapped to canonical foods using:
+   - exact synonym matching
+   - canonical name matching
+   - fuzzy matching with PostgreSQL `pg_trgm`
+
+4. **Knowledge Base Lookup**  
+   Matched foods are checked against curated statuses, notes, and rule conditions.
+
+5. **Verdict Generation**  
+   The backend returns:
+   - per-item verdicts
+   - an overall status
+   - short explanations for why the result was assigned
+
+---
+
+## Project Structure
+
+```text
+NibbleCheck/
+  backend/   # FastAPI backend, PostgreSQL schema, API logic
+  mobile/    # Expo React Native mobile client
