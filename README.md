@@ -80,3 +80,9 @@ Rather than only classifying food images, NibbleCheck also uses a structured kno
 NibbleCheck/
   backend/   # FastAPI backend, PostgreSQL schema, API logic
   mobile/    # Expo React Native mobile client
+
+## Caution & Privacy
+
+NibbleCheck is an educational and portfolio project intended to support general dog food safety checks. It is not a substitute for professional veterinary advice, diagnosis, or emergency care. In urgent situations, users should contact a licensed veterinarian or pet poison hotline immediately.
+
+The project is designed with minimal data collection in mind. NibbleCheck does not rely on sensitive personal information for core functionality, and any optional logging or feedback is used only to improve system accuracy and user experience.
