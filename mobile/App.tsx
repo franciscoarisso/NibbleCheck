@@ -1,7 +1,5 @@
-// App.tsx
 import { useState } from "react";
 import {
-  StyleSheet,
   View,
   Text,
   Pressable,
@@ -12,6 +10,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -25,37 +24,51 @@ import {
   checkBarcodeAsync,
 } from "./src/api";
 import { ClassifyItem, Verdict } from "./src/types";
+import { styles } from "./styles";
 
 type EntryMode = "image" | "barcode" | "text";
 type ResultSource = "image" | "barcode" | "text" | null;
 
 export default function App() {
+  // Which input method the user is using right now
   const [activeMode, setActiveMode] = useState<EntryMode>("image");
+
+  // Simple dark mode toggle for the UI
   const [isDark, setIsDark] = useState(false);
 
+  // Image selected from gallery or camera
   const [imgUri, setImgUri] = useState<string | null>(null);
+
+  // Text typed into the manual search input
   const [textQuery, setTextQuery] = useState("");
 
+  // Final results shown to the user
   const [results, setResults] = useState<ClassifyItem[] | null>(null);
+
+  // Lets me label where the current results came from
   const [resultSource, setResultSource] = useState<ResultSource>(null);
 
+  // Shared loading + error states across all three flows
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Controls the barcode scanner modal
   const [scannerVisible, setScannerVisible] = useState(false);
 
+  // expo-camera permission hook used for barcode scanning
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
+  // Clears old results/errors before a new check starts
   const resetFeedback = () => {
     setError(null);
     setResults(null);
     setResultSource(null);
   };
 
-  // ---------- IMAGE FLOW ----------
-
+  // Opens the user’s photo library and stores the chosen image URI
   const pickImage = async () => {
     resetFeedback();
+
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (perm.status !== "granted") {
       setError("Gallery permission is required to pick a photo.");
@@ -71,8 +84,10 @@ export default function App() {
     setImgUri(sel.assets[0].uri);
   };
 
+  // Opens the device camera and stores the captured image URI
   const takePhoto = async () => {
     resetFeedback();
+
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (perm.status !== "granted") {
       setError("Camera permission is required to take a photo.");
@@ -80,16 +95,20 @@ export default function App() {
     }
 
     const cap = await ImagePicker.launchCameraAsync({ quality: 1 });
+
     if (cap.canceled) return;
     setImgUri(cap.assets[0].uri);
   };
 
+  // Resizes/compresses the image first, then sends it to the backend
   const runImageCheck = async () => {
     if (!imgUri) return;
+
     setLoading(true);
     resetFeedback();
 
     try {
+      // I shrink the image before upload so requests are faster and lighter
       const manipResult = await ImageManipulator.manipulateAsync(
         imgUri,
         [{ resize: { width: 600 } }],
@@ -112,8 +131,8 @@ export default function App() {
     }
   };
 
-  // ---------- TEXT FLOW ----------
-
+  // Sends a typed food or ingredient query to the backend and
+  // reshapes the response into the same item format used by image results
   const runTextCheck = async () => {
     const trimmed = textQuery.trim();
     if (!trimmed) return;
@@ -146,8 +165,7 @@ export default function App() {
     }
   };
 
-  // ---------- BARCODE FLOW (expo-camera) ----------
-
+  // Makes sure camera permission exists before showing the scanner modal
   const requestAndOpenScanner = async () => {
     resetFeedback();
 
@@ -165,8 +183,9 @@ export default function App() {
     setScannerVisible(true);
   };
 
+  // Called automatically by expo-camera when a barcode is detected
   const handleBarCodeScanned = async (scan: BarcodeScanningResult) => {
-    // Close first so we don't scan multiple times
+    // Close the scanner first so the camera does not keep firing scans
     setScannerVisible(false);
 
     setLoading(true);
@@ -189,23 +208,21 @@ export default function App() {
     }
   };
 
-  // ---------- RENDER ----------
-
   return (
     <View style={[styles.root, isDark && styles.rootDark]}>
       <StatusBar style={isDark ? "light" : "dark"} />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        style={styles.flexOne}
       >
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header with theme toggle */}
           <View style={styles.headerRow}>
-            <View style={{ flex: 1 }}>
+            <View style={styles.flexOne}>
               <Text style={[styles.appTitle, isDark && styles.appTitleDark]}>
                 NibbleCheck
               </Text>
@@ -215,13 +232,13 @@ export default function App() {
                 Check if foods are safe before your dog takes a bite.
               </Text>
             </View>
+
             <ThemeToggle
               isDark={isDark}
               onToggle={() => setIsDark((prev) => !prev)}
             />
           </View>
 
-          {/* Entry mode cards */}
           <View style={styles.entryColumn}>
             <EntryCard
               label="Scan / Upload Food Image"
@@ -241,7 +258,7 @@ export default function App() {
             />
             <EntryCard
               label="Type a Food or Ingredient Name"
-              description='Search directly by food or ingredient, like “grapes” or “xylitol gum”.'
+              description='Search directly by food or ingredient, like "grapes" or "xylitol gum".'
               icon="⌨️"
               active={activeMode === "text"}
               isDark={isDark}
@@ -249,7 +266,6 @@ export default function App() {
             />
           </View>
 
-          {/* Active panel */}
           {activeMode === "image" && (
             <ImagePanel
               imgUri={imgUri}
@@ -279,7 +295,6 @@ export default function App() {
             />
           )}
 
-          {/* Loading + error */}
           {loading && (
             <View style={styles.loadingRow}>
               <ActivityIndicator color={isDark ? "#E5E7EB" : undefined} />
@@ -315,7 +330,6 @@ export default function App() {
             </View>
           )}
 
-          {/* Results */}
           {!!results?.length && (
             <View style={styles.resultsSection}>
               <Text
@@ -323,6 +337,7 @@ export default function App() {
               >
                 Results
               </Text>
+
               {resultSource && (
                 <Text
                   style={[
@@ -351,7 +366,6 @@ export default function App() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Barcode scanner modal */}
       <Modal visible={scannerVisible} animationType="slide" transparent>
         <View style={styles.scannerOverlay}>
           <View style={[styles.scannerCard, isDark && styles.scannerCardDark]}>
@@ -404,8 +418,6 @@ export default function App() {
   );
 }
 
-/* ---------- Small Components ---------- */
-
 function ThemeToggle({
   isDark,
   onToggle,
@@ -430,6 +442,7 @@ function ThemeToggle({
           ☀️
         </Text>
       </View>
+
       <View
         style={[
           styles.themeToggleSegment,
@@ -458,6 +471,7 @@ function EntryCard(props: {
   onPress: () => void;
 }) {
   const { label, description, icon, active, isDark, onPress } = props;
+
   return (
     <Pressable
       style={[
@@ -469,14 +483,12 @@ function EntryCard(props: {
       onPress={onPress}
     >
       <View
-        style={[
-          styles.entryIconBubble,
-          isDark && styles.entryIconBubbleDark,
-        ]}
+        style={[styles.entryIconBubble, isDark && styles.entryIconBubbleDark]}
       >
         <Text style={styles.entryIcon}>{icon}</Text>
       </View>
-      <View style={{ flex: 1 }}>
+
+      <View style={styles.flexOne}>
         <Text style={[styles.entryLabel, isDark && styles.entryLabelDark]}>
           {label}
         </Text>
@@ -526,6 +538,7 @@ function ImagePanel(props: {
             Upload from Gallery
           </Text>
         </Pressable>
+
         <Pressable
           style={[styles.secondaryButton, isDark && styles.secondaryButtonDark]}
           onPress={onSnap}
@@ -574,6 +587,7 @@ function BarcodePanel(props: {
   isDark: boolean;
 }) {
   const { loading, onStartScan, isDark } = props;
+
   return (
     <View style={[styles.panel, isDark && styles.panelDark]}>
       <Text style={[styles.panelTitle, isDark && styles.panelTitleDark]}>
@@ -645,12 +659,15 @@ function TextPanel(props: {
 function ResultCard({ item, isDark }: { item: ClassifyItem; isDark: boolean }) {
   const canonicalName = item.name || item.label || "Unknown item";
 
+  // Some responses use notes, others use rationale, so I support both
   const notes: string | undefined =
     (item as any).notes ?? item.rationale ?? undefined;
 
   const sources = item.sources ?? [];
   const hasSources = Array.isArray(sources) && sources.length > 0;
-  const showSourcesSection = hasSources || item.isProduct; // product card always shows Sources
+
+  // Product cards always show the sources block because they come from ingredient matching
+  const showSourcesSection = hasSources || item.isProduct;
 
   return (
     <View
@@ -704,10 +721,7 @@ function ResultCard({ item, isDark }: { item: ClassifyItem; isDark: boolean }) {
       {showSourcesSection && (
         <View style={styles.sourcesContainer}>
           <Text
-            style={[
-              styles.sourcesLabel,
-              isDark && styles.sourcesLabelDark,
-            ]}
+            style={[styles.sourcesLabel, isDark && styles.sourcesLabelDark]}
           >
             Sources
           </Text>
@@ -738,7 +752,6 @@ function ResultCard({ item, isDark }: { item: ClassifyItem; isDark: boolean }) {
   );
 }
 
-
 function StatusBadge({ status }: { status: Verdict }) {
   const bg =
     status === "SAFE" ? "#22C55E" : status === "CAUTION" ? "#EAB308" : "#EF4444";
@@ -752,538 +765,3 @@ function StatusBadge({ status }: { status: Verdict }) {
     </View>
   );
 }
-
-/* ---------- Styles ---------- */
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  rootDark: {
-    backgroundColor: "#020617",
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingTop: 56,
-    paddingHorizontal: 20,
-    paddingBottom: 32,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  appTitle: {
-    color: "#111827",
-    fontSize: 28,
-    fontWeight: "800",
-    letterSpacing: 0.3,
-  },
-  appTitleDark: {
-    color: "#F9FAFB",
-  },
-  appSubtitle: {
-    color: "#6B7280",
-    fontSize: 14,
-    marginTop: 6,
-    marginBottom: 16,
-  },
-  appSubtitleDark: {
-    color: "#9CA3AF",
-  },
-
-  entryColumn: {
-    gap: 10,
-    marginBottom: 24,
-  },
-  entryCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    gap: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  entryCardActive: {
-    borderColor: "#2563EB",
-    shadowOpacity: 0.09,
-    elevation: 3,
-  },
-  entryCardDark: {
-    backgroundColor: "#020617",
-    borderColor: "#1F2937",
-    shadowOpacity: 0.4,
-  },
-  entryCardActiveDark: {
-    borderColor: "#3B82F6",
-  },
-  entryIconBubble: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    backgroundColor: "#EFF6FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  entryIconBubbleDark: {
-    backgroundColor: "#1E293B",
-  },
-  entryIcon: {
-    fontSize: 22,
-  },
-  entryLabel: {
-    color: "#111827",
-    fontWeight: "700",
-    fontSize: 15,
-    marginBottom: 2,
-  },
-  entryLabelDark: {
-    color: "#E5E7EB",
-  },
-  entryDescription: {
-    color: "#6B7280",
-    fontSize: 12,
-  },
-  entryDescriptionDark: {
-    color: "#9CA3AF",
-  },
-
-  panel: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    padding: 16,
-    marginBottom: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  panelDark: {
-    backgroundColor: "#020617",
-    borderColor: "#1F2937",
-  },
-  panelTitle: {
-    color: "#111827",
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  panelTitleDark: {
-    color: "#F9FAFB",
-  },
-  panelSubtitle: {
-    color: "#6B7280",
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  panelSubtitleDark: {
-    color: "#9CA3AF",
-  },
-  panelButtonRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 12,
-  },
-
-  primaryButton: {
-    marginTop: 8,
-    backgroundColor: "#2563EB",
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 999,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  secondaryButtonDark: {
-    backgroundColor: "#0F172A",
-    borderColor: "#1F2937",
-  },
-  secondaryButtonText: {
-    color: "#111827",
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  secondaryButtonTextDark: {
-    color: "#E5E7EB",
-  },
-
-  imagePreviewContainer: {
-    borderRadius: 14,
-    overflow: "hidden",
-    marginTop: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  imagePreviewContainerDark: {
-    borderColor: "#1F2937",
-  },
-  imagePreview: {
-    width: "100%",
-    height: 220,
-  },
-
-  textInput: {
-    marginTop: 8,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: "#111827",
-    fontSize: 14,
-  },
-  textInputDark: {
-    backgroundColor: "#020617",
-    borderColor: "#1F2937",
-    color: "#F9FAFB",
-  },
-
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
-    gap: 8,
-  },
-  loadingText: {
-    color: "#6B7280",
-    fontSize: 13,
-  },
-  loadingTextDark: {
-    color: "#9CA3AF",
-  },
-  errorText: {
-    color: "#B91C1C",
-    fontSize: 13,
-    marginTop: 10,
-  },
-  errorTextDark: {
-    color: "#FCA5A5",
-  },
-
-  errorBubble: {
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: "#FEF2F2", // soft red background
-    borderWidth: 1,
-    borderColor: "#FCA5A5",
-  },
-  errorBubbleDark: {
-    backgroundColor: "#2B1213",
-    borderColor: "#FCA5A5",
-  },
-  errorBubbleHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  errorBubbleIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  errorBubbleTitle: {
-    color: "#991B1B",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  errorBubbleTitleDark: {
-    color: "#FECACA",
-  },
-  errorBubbleText: {
-    color: "#7F1D1D",
-    fontSize: 13,
-  },
-  errorBubbleTextDark: {
-    color: "#FECACA",
-  },
-
-  resultsSection: {
-    marginTop: 18,
-  },
-  resultsTitle: {
-    color: "#111827",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  resultsTitleDark: {
-    color: "#F9FAFB",
-  },
-  resultsSubtitle: {
-    color: "#6B7280",
-    fontSize: 13,
-    marginTop: 2,
-    marginBottom: 10,
-  },
-  resultsSubtitleDark: {
-    color: "#9CA3AF",
-  },
-
-  resultCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.02,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  resultCardDark: {
-    backgroundColor: "#020617",
-    borderColor: "#1F2937",
-  },
-  resultProductTag: {
-    color: "#6B7280",
-    fontSize: 11,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  resultProductTagDark: {
-    color: "#9CA3AF",
-  },
-  resultHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  resultTitle: {
-    color: "#111827",
-    fontSize: 17,
-    fontWeight: "700",
-    flexShrink: 1,
-  },
-  resultTitleDark: {
-    color: "#F9FAFB",
-  },
-  resultMeta: {
-    color: "#6B7280",
-    fontSize: 12,
-    marginTop: 6,
-  },
-  resultMetaDark: {
-    color: "#9CA3AF",
-  },
-  resultNotes: {
-    color: "#111827",
-    fontSize: 13,
-    marginTop: 8,
-    lineHeight: 18,
-  },
-  resultNotesDark: {
-    color: "#E5E7EB",
-  },
-  sourcesContainer: {
-    marginTop: 10,
-  },
-  sourcesLabel: {
-    color: "#6B7280",
-    fontSize: 12,
-    marginBottom: 4,
-    fontWeight: "600",
-  },
-  sourcesLabelDark: {
-    color: "#9CA3AF",
-  },
-  sourceItem: {
-    color: "#6B7280",
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  sourceItemDark: {
-    color: "#9CA3AF",
-  },
-
-  resultCardProduct: {
-    borderColor: "#4F46E5",
-    backgroundColor: "#EEF2FF",
-    shadowColor: "#4F46E5",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  resultCardProductDark: {
-    borderColor: "#6366F1",
-    backgroundColor: "#020617",
-    shadowColor: "#6366F1",
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  resultProductHeaderRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  resultProductTag: {
-    color: "#4F46E5",
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  resultProductTagDark: {
-    color: "#A5B4FC",
-  },
-  resultProductSubtag: {
-    color: "#6B7280",
-    fontSize: 11,
-    fontWeight: "500",
-  },
-  resultProductSubtagDark: {
-    color: "#9CA3AF",
-  },
-
-  // (you already have sourcesLabel / sourceItem / sourceItemDark)
-  sourceItemMuted: {
-    opacity: 0.9,
-  },
-
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-
-  /* Theme toggle */
-  themeToggle: {
-    flexDirection: "row",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    overflow: "hidden",
-    marginLeft: 12,
-    backgroundColor: "#F3F4F6",
-  },
-  themeToggleSegment: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  themeToggleSegmentActive: {
-    backgroundColor: "#2563EB",
-  },
-  themeToggleIcon: {
-    fontSize: 16,
-    color: "#4B5563",
-  },
-  themeToggleIconActive: {
-    color: "#FFFFFF",
-  },
-
-  /* Scanner modal */
-  scannerOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-  },
-  scannerCard: {
-    width: "100%",
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  scannerCardDark: {
-    backgroundColor: "#020617",
-    borderColor: "#1F2937",
-  },
-  scannerTitle: {
-    color: "#111827",
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  scannerTitleDark: {
-    color: "#F9FAFB",
-  },
-  scannerSubtitle: {
-    color: "#6B7280",
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  scannerSubtitleDark: {
-    color: "#9CA3AF",
-  },
-  scannerWindowOuter: {
-    borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: "#2563EB",
-    backgroundColor: "#000000",
-  },
-  scannerWindowOuterDark: {
-    borderColor: "#3B82F6",
-  },
-  scannerWindowInner: {
-    width: "100%",
-    aspectRatio: 1,
-    overflow: "hidden",
-  },
-  scannerCancelButton: {
-    marginTop: 12,
-    alignSelf: "center",
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-  },
-  scannerCancelText: {
-    color: "#4B5563",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  scannerCancelTextDark: {
-    color: "#E5E7EB",
-  },
-});
