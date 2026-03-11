@@ -1,0 +1,117 @@
+﻿name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Use a Postgres image matching the dump (dumped from Postgres 18.0)
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dogfood
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d dogfood"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dogfood
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply SQL (migrations, seeds, functions, constraints, verify)
+        run: |
+          set -e
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/00_extensions.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/01_types.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/02_tables.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/03_indexes.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/04_seeds_core.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/05_functions.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/06_constraints.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/99_verify.sql
+
+      - name: Show counts (just for logs)
+        run: |
+          psql "$DATABASE_URL" -c "SELECT count(*) AS foods FROM foods;"
+          psql "$DATABASE_URL" -c "SELECT count(*) AS synonyms FROM synonyms;"
+          psql "$DATABASE_URL" -c "SELECT count(*) AS rules FROM rules;"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install API deps
+        run: pip install -r requirements.txt
+
+      - name: API smoke via TestClient
+        run: |
+          python - <<'PY'
+          import os
+          os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/dogfood")
+          from starlette.testclient import TestClient
+          from api.main import app
+
+          c = TestClient(app)
+
+          # Root health
+          r = c.get("/")
+          print("ROOT STATUS:", r.status_code)
+          print("ROOT BODY:", r.text)
+          assert r.status_code == 200, r.text
+          assert r.json().get("ok") is True, r.text
+
+          # DB health
+          r2 = c.get("/__health/db")
+          print("DB STATUS:", r2.status_code)
+          print("DB BODY:", r2.text)
+          assert r2.status_code == 200, r2.text
+          assert r2.json().get("ok") is True, r2.text
+          PY
+
+      - name: API CV /classify/resolve smoke test
+        run: |
+          python - <<'PY'
+          import io, os
+          from starlette.testclient import TestClient
+          from PIL import Image
+          from api.main import app
+
+          # Make sure DB URL is set (same as above)
+          os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/dogfood")
+
+          client = TestClient(app)
+
+          # Create a simple dummy image in memory
+          img = Image.new("RGB", (64, 64), color=(255, 255, 255))
+          buf = io.BytesIO()
+          img.save(buf, format="PNG")
+          buf.seek(0)
+
+          files = {
+              "file": ("test.png", buf.getvalue(), "image/png"),
+          }
+
+          r = client.post("/classify/resolve", files=files)
+          print("STATUS:", r.status_code)
+          print("BODY:", r.text)
+
+          assert r.status_code == 200, r.text
+          data = r.json()
+          assert isinstance(data, dict), data
+          assert "candidates" in data, data
+          assert isinstance(data["candidates"], list), data
+          # We don't care if it's empty; we just want the pipeline to run without errors
+          PY
